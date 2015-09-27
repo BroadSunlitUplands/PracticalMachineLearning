@@ -1,0 +1,150 @@
+## PRACTICAL MACHINE LEARNING: PROJECT
+
+### ABP
+
+### 24 SEPTEMBER 2015
+
+======================================================================
+
+
+## Data
+
+The data comes from research on Human Activity Recognition. Specifically, it comes from research culminating into a 2013 paper titled "Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements" by Ugulino, Cardigor, et al. In this study, six males aged 20-28 performed dumbbell curls with sensors that measured how well they performed according to guidance from trainers. Each subject completed one set of 10 repetitions with a 1.25 kg dumbbell. If the sensors indicated they lifted as taught, the performance received an "A". If they threw their elbows
+to the front, they received a "B". If they lifted the dumbbell only halfway, they received a "C". Lowering the dumbbell only halfway resulted in a "D", while throwing the hips to the front resulted in an "E".
+
+
+```{r}
+library(data.table)
+library(caret)
+library(e1071)
+
+data <- read.csv("pml-training.csv", stringsAsFactors=FALSE)
+
+
+# Restrict variables to those that (1) are not missing values AND (2) related to the 
+# forearm, arm, dumbbell, and belt.
+
+missing <- sapply(data, function (x) any(is.na(x) | x == ""))
+poss <- !missing & grepl("forearm|[^fore)]arm|dumbbell|belt", names(missing))
+
+maybe <- names(missing)[poss]
+
+# Restrict variables to only (1) the possible candidates AND (2) the dependent 
+# variable, "classe".
+
+allvar <- c("classe", maybe)
+
+data2 <- data[,allvar]
+
+# Convert the data set into a data table and "classe" into a factor variable.
+
+data_dt <- data.table(data2)
+
+data3 <- data_dt[, classe := factor(data_dt[,classe])]
+
+data3[, .N, classe]
+
+# Partition the data.
+
+set.seed(5150)
+train <- createDataPartition(data3$classe, p=0.7)
+train_a <- data3[train[[1]]]
+train_b <- data3[-train[[1]]]
+
+
+# Center and scale both data sets.
+
+cs <- train_a[,maybe, with=FALSE]
+pp <- preProcess(cs)
+
+pp_cs <- predict(pp, cs)
+train_a_cs <- data.table(data.frame(classe = train_a[,classe],pp_cs))
+
+cs <- train_b[,maybe, with=FALSE]
+pp <- preProcess(cs)
+
+pp_cs <- predict(pp, cs)
+train_b_cs <- data.table(data.frame(classe = train_b[,classe],pp_cs))
+
+# Set control parameters.
+
+ctrlPar <- trainControl(classProbs=TRUE, savePredictions=TRUE)
+
+```
+
+
+## Methodology
+
+This analysis will use random forest to make predictions. We
+will use Random Forest on the training set A. If all goes
+well, the out of sample error rate should be approximately
+2%.
+
+
+```{r cache=TRUE}
+
+# Use Random Forest ensemble on training set A.
+
+trainingMod <- train(classe ~ ., data=train_a_cs,
+method="rf")
+
+# Evaluate the data with the training set A, which has 70%
+of the original training data.
+
+hat <- predict(trainingMod, train_a_cs)
+confusionMatrix(hat, train_a[,classe])
+
+# Evaluate the data with the training set B, which has 30%
+of the original training data.
+
+hat <- predict(trainingMod, train_b_cs)
+confusionMatrix(hat, train_b[,classe])
+
+
+varImp(trainingMod)
+trainingMod$finalModel
+
+```
+
+
+The results show that the error rate is less than 1%.
+
+Now we will use the testing data to make predictions.  With
+that, we combine the predictions with the appropriate fields
+and display the results. When feeding the results into
+Coursera's Prediction Assignment Submission, the results
+were 20 for 20, a 100% success rate.
+
+```{r}
+
+# Compare with the testing data. First, prep the testing
+data.
+
+t_data <- read.csv("pml-testing.csv",
+stringsAsFactors=FALSE)
+
+t_data_cs <- predict(pp, t_data[, maybe])
+hat <- predict(trainingMod, t_data_cs)
+
+t_data <- cbind(hat, t_data)
+t_data2 <- subset(t_data,
+select=names(t_data)[grep("forearm|[^fore)]arm|dumbbell|belt
+", names(t_data), invert=TRUE)])
+
+# Display final predictions.
+
+t_data2
+
+```
+
+
+## Sources
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu,
+R.; Fuks, H. Wearable Computing: Accelerometers' Data
+Classification of Body Postures and Movements. Proceedings
+of 21st Brazilian Symposium on Artificial Intelligence.
+Advances in Artificial Intelligence - SBIA 2012. In: Lecture
+Notes in Computer Science. , pp. 52-61. Curitiba, PR:
+Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9.
+DOI: 10.1007/978-3-642-34459-6_6.
